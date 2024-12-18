@@ -100,19 +100,21 @@ app.post('/webhook', async (req, res) => {
         // Get the business context
         const businessContext = await createContext();
 
-        // Ask Gemini to assess confidence based on the specific business context
-        const assessmentResult = await model.generateContent(`
-          Given this specific business context:
-          ${businessContext}
-          
-          Evaluate if you can accurately answer this question: "${userQuestion}"
-          Return only a number between 0-100 representing your confidence level based strictly on the information provided in the context above.
-        `);
+        // Properly structure the content for confidence assessment
+        const assessmentResult = await model.generateContent({
+          parts: [{
+            text: `Given this specific business context:
+            ${businessContext}
+            
+            Evaluate if you can accurately answer this question: "${userQuestion}"
+            Return only a number between 0-100 representing your confidence level based strictly on the information provided in the context above.`
+          }]
+        });
         
         const confidenceScore = parseInt(assessmentResult.response.text().trim());
 
-        // If confidence is less than 90%, don't respond
-        if (confidenceScore < 90) {
+        // If confidence is less than 80%, don't respond
+        if (confidenceScore < 80) {
           return;
         }
 
@@ -139,6 +141,7 @@ app.post('/webhook', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 // Basic health check endpoint
