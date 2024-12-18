@@ -25,7 +25,14 @@ const lineClient = new line.messagingApi.MessagingApiClient({
 
 // Store chat history with timestamps
 const chatHistory = {};
-
+setInterval(() => {
+  const oneMonthAgo = Date.now() - 60 * 60 * 1000 * 24 * 30;
+  Object.keys(chatHistory).forEach(userId => {
+    if (chatHistory[userId].lastAccess < oneMonthAgo) {
+      delete chatHistory[userId];
+    }
+  });
+}, 60 * 60 * 1000 * 24);
 // Create business context
 async function createContext() {
   const context = `คุณเป็นผู้เชี่ยวชาญด้านการเก็บรักษาดอกไม้ในเรซิ่น ที่ให้คำปรึกษาด้วยความเป็นมิตร
