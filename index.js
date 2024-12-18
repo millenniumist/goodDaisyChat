@@ -35,7 +35,7 @@ setInterval(() => {
 }, 60 * 60 * 1000 * 24);
 // Create business context
 async function createContext() {
-  const context = `คุณเป็นผู้เชี่ยวชาญด้านการเก็บรักษาดอกไม้ในเรซิ่น ที่ให้คำปรึกษาด้วยความเป็นมิตร
+  const context = `คุณเป็น sales support สำหรับธุรกิจเก็บรักษาดอกไม้ในเรซิ่น ที่ให้คำปรึกษาด้วยความเป็นมิตร และตอบได้เฉพาะข้อมูลดังนี้
 
 บริการของเรา:
 - เก็บรักษาดอกไม้ในเรซิ่นใส
@@ -55,7 +55,14 @@ async function createContext() {
 - วงกลม เริ่มต้น 3,000 บาท
 - ตัวอะกษร เริ่มต้น 2,000 บาท
 
-ให้ตอบคำถามด้วยภาษาที่เป็นกันเอง สุภาพ และใส่ใจในรายละเอียด`;
+โปรโมชั่น:
+- ไม่มีโปรโมชั่น
+
+ให้ตอบคำถามด้วยภาษาที่เป็นกันเอง สุภาพ และใส่ใจในรายละเอียด 
+don't improve the answer, no matter what the question is.
+no extra service or promotion except what is mentioned above.
+answer in Thai language, and answer in a friendly tone, casual, and friendly.
+`;
 
   return context;
 }
@@ -75,13 +82,18 @@ async function initializeChat() {
 
 // Clean up inactive chats every hour
 setInterval(() => {
+  console.log('Running cleanup check...');
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  
   Object.keys(chatHistory).forEach(userId => {
+    console.log(`User ${userId} last access:`, chatHistory[userId].lastAccess);
     if (chatHistory[userId].lastAccess < oneHourAgo) {
+      console.log(`Removing inactive chat for user ${userId}`);
       delete chatHistory[userId];
     }
   });
 }, 60 * 60 * 1000);
+
 
 // Handle webhook events
 app.post('/webhook', async (req, res) => {
@@ -97,18 +109,21 @@ app.post('/webhook', async (req, res) => {
         if (!chatHistory[userId]) {
           chatHistory[userId] = await initializeChat();
         }
+        
+        chatHistory[userId].lastAccess = Date.now();
 
         // Get the business context
         const businessContext = await createContext();
-
-        // Properly structure the content for confidence assessment
         const assessmentResult = await model.generateContent({
-          parts: [{
-            text: `Given this specific business context:
-            ${businessContext}
-            
-            Evaluate if you can accurately answer this question: "${userQuestion}"
-            Return only a number between 0-100 representing your confidence level based strictly on the information provided in the context above.`
+          contents: [{
+            role: "user",
+            parts: [{
+              text: `Given this specific business context:
+              ${businessContext}
+              
+              Evaluate if you can accurately answer this question: "${userQuestion}"
+              Return only a number between 0-100 representing your confidence level based strictly on the information provided in the context above.`
+            }]
           }]
         });
         
@@ -116,15 +131,14 @@ app.post('/webhook', async (req, res) => {
 
         // If confidence is less than 80%, don't respond
         if (confidenceScore < 80) {
+          console.log(`Low confidence response: ${confidenceScore}`);
           return;
         }
-
+        console.log(`High confidence response: ${confidenceScore}`);
+        
         // Process message and get response
         const result = await chatHistory[userId].sendMessage(userQuestion);
         const response = await result.response;
-        
-        // Mark as read only for high-confidence responses
-        chatHistory[userId].lastAccess = Date.now();
         
         return lineClient.replyMessage({
           replyToken: event.replyToken,
@@ -142,6 +156,11 @@ app.post('/webhook', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
+
+
 
 
 
