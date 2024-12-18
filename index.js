@@ -1,10 +1,11 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, middleware } = require('@line/bot-sdk');
+const line = require('@line/bot-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 // LINE config
 const lineConfig = {
@@ -15,10 +16,15 @@ const lineConfig = {
 const app = express();
 
 // LINE middleware
-app.use('/webhook', middleware(lineConfig));
+app.use('/webhook', line.middleware(lineConfig));
 
-// Create LINE client
-const lineClient = new Client(lineConfig);
+// Create LINE client using the newer approach
+const lineClient = new line.messagingApi.MessagingApiClient({
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
+});
+
+// Store chat history with timestamps
+const chatHistory = {};
 
 // Create business context
 async function createContext() {
@@ -47,23 +53,53 @@ async function createContext() {
   return context;
 }
 
+// Initialize chat with context
+async function initializeChat() {
+  const chat = model.startChat({
+    history: [{
+      role: "user",
+      parts: await createContext()
+    }]
+  });
+  chat.lastAccess = Date.now();
+  return chat;
+}
+
+// Clean up inactive chats every hour
+setInterval(() => {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  Object.keys(chatHistory).forEach(userId => {
+    if (chatHistory[userId].lastAccess < oneHourAgo) {
+      delete chatHistory[userId];
+    }
+  });
+}, 60 * 60 * 1000);
+
 // Handle webhook events
 app.post('/webhook', async (req, res) => {
   try {
     const events = req.body.events;
-    const context = await createContext();
     
     await Promise.all(events.map(async (event) => {
       if (event.type === 'message' && event.message.type === 'text') {
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        const prompt = `${context}\n\nคำถามจากลูกค้า: ${event.message.text}\n\nคำตอบ:`;
+        // Get or create chat session for this user
+        const userId = event.source.userId;
+        if (!chatHistory[userId]) {
+          chatHistory[userId] = await initializeChat();
+        }
         
-        const result = await model.generateContent(prompt);
+        // Update last access time
+        chatHistory[userId].lastAccess = Date.now();
+
+        const result = await chatHistory[userId].sendMessage(event.message.text);
         const response = await result.response;
         
-        return lineClient.replyMessage(event.replyToken, {
-          type: 'text',
-          text: response.text()
+        return lineClient.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{
+            type: 'text',
+            text: response.text()
+          }]
         });
       }
     }));
