@@ -65,12 +65,13 @@ async function initializeChat() {
   const chat = model.startChat({
     history: [{
       role: "user",
-      parts: await createContext()
+      parts: [{ text: await createContext() }]
     }]
   });
   chat.lastAccess = Date.now();
   return chat;
 }
+
 
 // Clean up inactive chats every hour
 setInterval(() => {
