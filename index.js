@@ -39,21 +39,21 @@ async function createContext() {
 
 บริการของเรา:
 - เก็บรักษาดอกไม้ในเรซิ่นใส
-- ทำเป็นเครื่องประดับ เช่น จี้ แหวน ต่างหู
+- ทำเป็นรูปทรงต่างๆ เช่น หัวใจ สี่เหลี่ยม วงกลม ตัวอักษร
 - รับทำของที่ระลึกจากดอกไม้สำคัญ เช่น ดอกไม้จากงานแต่งงาน
 - สอนเทคนิคการเก็บรักษาดอกไม้
 
 ข้อมูลสำคัญ:
-- ใช้เวลาผลิต 7-14 วัน
-- รับประกันคุณภาพงาน
+- ใช้เวลาผลิต 2 เดือน
+- ไม่มีบริการนัดรับ
 - มีบริการจัดส่งทั่วประเทศ
 - รับปรึกษาฟรี
 
 ราคา:
-- จี้ดอกไม้ในเรซิ่น เริ่มต้น 890 บาท
-- แหวนดอกไม้ในเรซิ่น เริ่มต้น 990 บาท
-- ต่างหูดอกไม้ในเรซิ่น เริ่มต้น 1,290 บาท
-- งานคัสตอมตามความต้องการ เริ่มต้น 1,590 บาท
+- รูปทรง หัวใจ เริ่มต้น 2,500 บาท
+- รูปทรง สี่เหลี่ยม เริ่มต้น 2,300 บาท
+- วงกลม เริ่มต้น 3,000 บาท
+- ตัวอะกษร เริ่มต้น 2,000 บาท
 
 ให้ตอบคำถามด้วยภาษาที่เป็นกันเอง สุภาพ และใส่ใจในรายละเอียด`;
 
@@ -89,17 +89,39 @@ app.post('/webhook', async (req, res) => {
     
     await Promise.all(events.map(async (event) => {
       if (event.type === 'message' && event.message.type === 'text') {
-        // Get or create chat session for this user
         const userId = event.source.userId;
+        const userQuestion = event.message.text;
+
+        // Get or create chat session
         if (!chatHistory[userId]) {
           chatHistory[userId] = await initializeChat();
         }
-        
-        // Update last access time
-        chatHistory[userId].lastAccess = Date.now();
 
-        const result = await chatHistory[userId].sendMessage(event.message.text);
+        // Get the business context
+        const businessContext = await createContext();
+
+        // Ask Gemini to assess confidence based on the specific business context
+        const assessmentResult = await model.generateContent(`
+          Given this specific business context:
+          ${businessContext}
+          
+          Evaluate if you can accurately answer this question: "${userQuestion}"
+          Return only a number between 0-100 representing your confidence level based strictly on the information provided in the context above.
+        `);
+        
+        const confidenceScore = parseInt(assessmentResult.response.text().trim());
+
+        // If confidence is less than 90%, don't respond
+        if (confidenceScore < 90) {
+          return;
+        }
+
+        // Process message and get response
+        const result = await chatHistory[userId].sendMessage(userQuestion);
         const response = await result.response;
+        
+        // Mark as read only for high-confidence responses
+        chatHistory[userId].lastAccess = Date.now();
         
         return lineClient.replyMessage({
           replyToken: event.replyToken,
@@ -117,6 +139,7 @@ app.post('/webhook', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // Basic health check endpoint
 app.get('/', (req, res) => {
